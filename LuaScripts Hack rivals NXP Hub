@@ -1,0 +1,1394 @@
+------------------------------------------------------------
+-- NXP HUB - CYBERPUNK EDITION (ULTIMATE RAINBOW VIEWMODEL FIX)
+------------------------------------------------------------
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local Camera = workspace.CurrentCamera
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+------------------------------------------------------------
+-- SETTINGS
+------------------------------------------------------------
+local ESPEnabled = false
+local ESPDistance = 1000
+local MIN_ESP_DISTANCE = 100
+local MAX_ESP_DISTANCE = 5000
+local NoclipEnabled = false
+local SavedCollision = {}
+local LowGraphicsEnabled = false
+-- RAINBOW GUI SETTINGS
+local RainbowGUIEnabled = false
+-- FLY SETTINGS
+local FlyEnabled = false
+local FlySpeed = 50
+local MIN_FLY_SPEED = 10
+local MAX_FLY_SPEED = 300
+local FlyBodyVelocity = nil
+local FlyBodyGyro = nil
+-- TELEPORT SETTINGS
+local TeleportEnabled = false
+local TeleportHotkey = Enum.KeyCode.E
+local WaitingForTeleportHotkey = false
+local TeleportBackEnabled = true
+local TeleportBackDelay = 0.5
+local TeleportHeightOffset = 4
+local SelectedPlayers = {}
+local IsDraggingSlider = false
+------------------------------------------------------------
+-- AUTO SHOT SETTINGS & TARGETS
+------------------------------------------------------------
+local AutoShotEnabled = false
+local AutoShotModes = {"SINGLE", "RAPID", "HOLD"}
+local CurrentAutoShotIndex = 1
+local AutoShotMode = AutoShotModes[CurrentAutoShotIndex]
+local IsShooting = false
+local SingleFired = false
+local AimSelectedPlayers = {}
+------------------------------------------------------------
+-- TELEPORT LOCK STATE
+------------------------------------------------------------
+local TeleportTargetPlayer = nil
+local TeleportConnectionStepped = nil
+local TeleportConnectionRender = nil
+------------------------------------------------------------
+-- REMOVE OLD GUI
+------------------------------------------------------------
+local OldGui = PlayerGui:FindFirstChild("NXP_HUB")
+if OldGui then
+    OldGui:Destroy()
+end
+------------------------------------------------------------
+-- COLORS
+------------------------------------------------------------
+local COLORS = {
+    Background = Color3.fromRGB(8, 10, 20),
+    Panel = Color3.fromRGB(14, 17, 32),
+    Panel2 = Color3.fromRGB(19, 22, 42),
+    Purple = Color3.fromRGB(145, 60, 255),
+    PurpleDark = Color3.fromRGB(75, 25, 150),
+    Cyan = Color3.fromRGB(0, 230, 255),
+    CyanDark = Color3.fromRGB(0, 130, 170),
+    White = Color3.fromRGB(245, 250, 255),
+    Gray = Color3.fromRGB(150, 165, 185),
+    Green = Color3.fromRGB(45, 255, 150),
+    Red = Color3.fromRGB(255, 65, 100),
+    Yellow = Color3.fromRGB(255, 220, 80)
+}
+------------------------------------------------------------
+-- SCREEN GUI
+------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NXP_HUB"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 2147483647
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+ScreenGui.Parent = PlayerGui
+local MAIN_ZINDEX = 10000
+------------------------------------------------------------
+-- UTILITY
+------------------------------------------------------------
+local function AddCorner(object, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius)
+    corner.Parent = object
+    return corner
+end
+local function AddStroke(object, color, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color
+    stroke.Thickness = thickness
+    stroke.Transparency = 0.15
+    stroke.Parent = object
+    return stroke
+end
+local function AddGradient(object, color1, color2, rotation)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, color1),
+        ColorSequenceKeypoint.new(1, color2)
+    })
+    gradient.Rotation = rotation or 0
+    gradient.Parent = object
+    return gradient
+end
+------------------------------------------------------------
+-- DRAG
+------------------------------------------------------------
+local function MakeDraggable(object)
+    local dragging = false
+    local dragStart = nil
+    local startPosition = nil
+    object.InputBegan:Connect(function(input)
+        if IsDraggingSlider then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        dragging = true
+        dragStart = input.Position
+        startPosition = object.Position
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if IsDraggingSlider or not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStart
+            object.Position = UDim2.new(
+                startPosition.X.Scale,
+                startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale,
+                startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+------------------------------------------------------------
+-- MAIN BUTTON
+------------------------------------------------------------
+local MainButton = Instance.new("TextButton")
+MainButton.Name = "NXP_Button"
+MainButton.Parent = ScreenGui
+MainButton.ZIndex = MAIN_ZINDEX
+MainButton.Size = UDim2.fromOffset(86, 86)
+MainButton.Position = UDim2.new(0, 25, 0.5, -43)
+MainButton.Text = "NXP"
+MainButton.TextScaled = true
+MainButton.Font = Enum.Font.GothamBlack
+MainButton.TextColor3 = COLORS.White
+MainButton.BackgroundColor3 = COLORS.Purple
+MainButton.BorderSizePixel = 0
+AddCorner(MainButton, 43)
+AddStroke(MainButton, COLORS.Cyan, 3)
+AddGradient(MainButton, Color3.fromRGB(65, 10, 150), Color3.fromRGB(0, 210, 255), 45)
+MakeDraggable(MainButton)
+------------------------------------------------------------
+-- HUB
+------------------------------------------------------------
+local Hub = Instance.new("Frame")
+Hub.Name = "Hub"
+Hub.Parent = ScreenGui
+Hub.ZIndex = MAIN_ZINDEX
+Hub.Size = UDim2.fromOffset(430, 520)
+Hub.Position = UDim2.new(0.5, -215, 0.5, -260)
+Hub.BackgroundColor3 = COLORS.Background
+Hub.BorderSizePixel = 0
+Hub.Visible = false
+Hub.ClipsDescendants = true
+AddCorner(Hub, 18)
+AddStroke(Hub, COLORS.Cyan, 2)
+local HubGradient = Instance.new("UIGradient")
+HubGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(8, 8, 25)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 10, 35)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 20, 30))
+})
+HubGradient.Rotation = 35
+HubGradient.Parent = Hub
+MakeDraggable(Hub)
+local TopLine = Instance.new("Frame")
+TopLine.Parent = Hub
+TopLine.ZIndex = MAIN_ZINDEX + 5
+TopLine.Size = UDim2.new(1, -40, 0, 2)
+TopLine.Position = UDim2.new(0, 20, 0, 55)
+TopLine.BackgroundColor3 = COLORS.Cyan
+TopLine.BorderSizePixel = 0
+local Title = Instance.new("TextLabel")
+Title.Parent = Hub
+Title.ZIndex = MAIN_ZINDEX + 5
+Title.Size = UDim2.new(1, -80, 0, 45)
+Title.Position = UDim2.new(0, 20, 0, 5)
+Title.BackgroundTransparency = 1
+Title.Text = "NXP hub"
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBlack
+Title.TextColor3 = COLORS.White
+Title.TextXAlignment = Enum.TextXAlignment.Left
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Parent = Hub
+Subtitle.ZIndex = MAIN_ZINDEX + 5
+Subtitle.Size = UDim2.new(1, -80, 0, 18)
+Subtitle.Position = UDim2.new(0, 22, 0, 39)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "SYSTEM // ONLINE"
+Subtitle.TextSize = 11
+Subtitle.Font = Enum.Font.GothamBold
+Subtitle.TextColor3 = COLORS.Cyan
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+local CloseButton = Instance.new("TextButton")
+CloseButton.Parent = Hub
+CloseButton.ZIndex = MAIN_ZINDEX + 10
+CloseButton.Size = UDim2.fromOffset(36, 36)
+CloseButton.Position = UDim2.new(1, -48, 0, 12)
+CloseButton.Text = "×"
+CloseButton.TextScaled = true
+CloseButton.Font = Enum.Font.GothamBlack
+CloseButton.TextColor3 = COLORS.White
+CloseButton.BackgroundColor3 = Color3.fromRGB(100, 20, 50)
+CloseButton.BorderSizePixel = 0
+AddCorner(CloseButton, 10)
+AddStroke(CloseButton, COLORS.Red, 1)
+------------------------------------------------------------
+-- TAB CONTAINER
+------------------------------------------------------------
+local TabContainer = Instance.new("Frame")
+TabContainer.Parent = Hub
+TabContainer.ZIndex = MAIN_ZINDEX + 5
+TabContainer.Size = UDim2.new(1, -40, 0, 42)
+TabContainer.Position = UDim2.new(0, 20, 0, 70)
+TabContainer.BackgroundTransparency = 1
+local function CreateTabButton(text, position)
+    local button = Instance.new("TextButton")
+    button.Parent = TabContainer
+    button.ZIndex = MAIN_ZINDEX + 6
+    button.Size = UDim2.new(0.31, 0, 1, 0)
+    button.Position = position
+    button.Text = text
+    button.TextScaled = true
+    button.Font = Enum.Font.GothamBlack
+    button.TextColor3 = COLORS.White
+    button.BackgroundColor3 = COLORS.Panel2
+    button.BorderSizePixel = 0
+    AddCorner(button, 10)
+    AddStroke(button, COLORS.Purple, 1)
+    return button
+end
+local MainTab = CreateTabButton("MAIN", UDim2.new(0, 0, 0, 0))
+local AimTab = CreateTabButton("AIMBOT", UDim2.new(0.345, 0, 0, 0))
+local AdminTab = CreateTabButton("ADMIN", UDim2.new(0.69, 0, 0, 0))
+------------------------------------------------------------
+-- PAGE FACTORY
+------------------------------------------------------------
+local function CreatePage(canvasHeight)
+    local page = Instance.new("ScrollingFrame")
+    page.Parent = Hub
+    page.ZIndex = MAIN_ZINDEX + 2
+    page.Size = UDim2.new(1, -40, 0, 370)
+    page.Position = UDim2.new(0, 20, 0, 122)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = COLORS.Cyan
+    page.ScrollingDirection = Enum.ScrollingDirection.Y
+    page.CanvasSize = UDim2.new(0, 0, 0, canvasHeight)
+    page.Visible = false
+    return page
+end
+local MainPage = CreatePage(560)
+local AimPage = CreatePage(560)
+local AdminPage = CreatePage(700)
+------------------------------------------------------------
+-- UI CONTROLS FACTORY
+------------------------------------------------------------
+local function CreateButton(parent, text, y)
+    local button = Instance.new("TextButton")
+    button.Parent = parent
+    button.ZIndex = MAIN_ZINDEX + 5
+    button.Size = UDim2.new(1, 0, 0, 42)
+    button.Position = UDim2.new(0, 0, 0, y)
+    button.Text = text
+    button.TextScaled = true
+    button.Font = Enum.Font.GothamBold
+    button.TextColor3 = COLORS.White
+    button.BackgroundColor3 = COLORS.Panel2
+    button.BorderSizePixel = 0
+    AddCorner(button, 10)
+    AddStroke(button, COLORS.Purple, 1)
+    return button
+end
+local function CreateLabel(parent, text, y)
+    local label = Instance.new("TextLabel")
+    label.Parent = parent
+    label.ZIndex = MAIN_ZINDEX + 5
+    label.Size = UDim2.new(1, 0, 0, 26)
+    label.Position = UDim2.new(0, 0, 0, y)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.TextColor3 = COLORS.White
+    return label
+end
+local function CreateSlider(parent, y, minValue, maxValue, initialValue, callback)
+    local container = Instance.new("Frame")
+    container.Parent = parent
+    container.ZIndex = MAIN_ZINDEX + 5
+    container.Size = UDim2.new(1, 0, 0, 55)
+    container.Position = UDim2.new(0, 0, 0, y)
+    container.BackgroundTransparency = 1
+    local bar = Instance.new("Frame")
+    bar.Parent = container
+    bar.ZIndex = MAIN_ZINDEX + 6
+    bar.Size = UDim2.new(1, 0, 0, 8)
+    bar.Position = UDim2.new(0, 0, 0.5, -4)
+    bar.BackgroundColor3 = Color3.fromRGB(35, 38, 60)
+    bar.BorderSizePixel = 0
+    AddCorner(bar, 8)
+    local fill = Instance.new("Frame")
+    fill.Parent = bar
+    fill.ZIndex = MAIN_ZINDEX + 7
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = COLORS.Cyan
+    fill.BorderSizePixel = 0
+    AddCorner(fill, 8)
+    AddGradient(fill, COLORS.Purple, COLORS.Cyan, 0)
+    local knob = Instance.new("Frame")
+    knob.Parent = bar
+    knob.ZIndex = MAIN_ZINDEX + 8
+    knob.Size = UDim2.fromOffset(18, 18)
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.Position = UDim2.new(0, 0, 0.5, 0)
+    knob.BackgroundColor3 = COLORS.White
+    knob.BorderSizePixel = 0
+    AddCorner(knob, 10)
+    AddStroke(knob, COLORS.Cyan, 2)
+    local value = initialValue
+    local sliderDragging = false
+    local function SetValue(newValue)
+        value = math.clamp(newValue, minValue, maxValue)
+        local alpha = (value - minValue) / (maxValue - minValue)
+        fill.Size = UDim2.new(alpha, 0, 1, 0)
+        knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+        callback(value)
+    end
+    local function UpdateFromInput(input)
+        if bar.AbsoluteSize.X <= 0 then return end
+        local relativeX = input.Position.X - bar.AbsolutePosition.X
+        local alpha = math.clamp(relativeX / bar.AbsoluteSize.X, 0, 1)
+        local newValue = minValue + (maxValue - minValue) * alpha
+        SetValue(newValue)
+    end
+    local function BeginSlider(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        IsDraggingSlider = true
+        sliderDragging = true
+        UpdateFromInput(input)
+    end
+    local function EndSlider(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliderDragging = false
+            IsDraggingSlider = false
+        end
+    end
+    container.InputBegan:Connect(BeginSlider)
+    bar.InputBegan:Connect(BeginSlider)
+    fill.InputBegan:Connect(BeginSlider)
+    knob.InputBegan:Connect(BeginSlider)
+    UIS.InputChanged:Connect(function(input)
+        if not sliderDragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            UpdateFromInput(input)
+        end
+    end)
+    UIS.InputEnded:Connect(EndSlider)
+    SetValue(initialValue)
+    return container, SetValue
+end
+------------------------------------------------------------
+-- MAIN PAGE CONTROLS
+------------------------------------------------------------
+local ESPButton = CreateButton(MainPage, "ESP: OFF", 0)
+local DistanceTitle = CreateLabel(MainPage, "ESP DISTANCE: 1000 STUDS", 50)
+CreateSlider(MainPage, 78, MIN_ESP_DISTANCE, MAX_ESP_DISTANCE, ESPDistance, function(value)
+    ESPDistance = math.floor(value / 100) * 100
+    DistanceTitle.Text = "ESP DISTANCE: " .. tostring(ESPDistance) .. " STUDS"
+end)
+local FlyButton = CreateButton(MainPage, "FLY: OFF", 135)
+local FlySpeedTitle = CreateLabel(MainPage, "FLY SPEED: 50", 185)
+CreateSlider(MainPage, 213, MIN_FLY_SPEED, MAX_FLY_SPEED, FlySpeed, function(value)
+    FlySpeed = math.floor(value)
+    FlySpeedTitle.Text = "FLY SPEED: " .. tostring(FlySpeed)
+end)
+local NoclipButton = CreateButton(MainPage, "NOCLIP: OFF", 270)
+local LowGraphicsButton = CreateButton(MainPage, "FIX LAG: OFF", 320)
+local RainbowGUIButton = CreateButton(MainPage, "RAINBOW GUI: OFF", 370)
+local LagStatus = CreateLabel(MainPage, "SYSTEM // READY", 420)
+LagStatus.TextColor3 = COLORS.Gray
+------------------------------------------------------------
+-- FLY SYSTEM LOGIC
+------------------------------------------------------------
+local function StopFly()
+    FlyEnabled = false
+    if FlyBodyVelocity then FlyBodyVelocity:Destroy() FlyBodyVelocity = nil end
+    if FlyBodyGyro then FlyBodyGyro:Destroy() FlyBodyGyro = nil end
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
+    end
+end
+local function StartFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
+    StopFly()
+    FlyEnabled = true
+    FlyBodyVelocity = Instance.new("BodyVelocity")
+    FlyBodyVelocity.Name = "NXP_FlyVelocity"
+    FlyBodyVelocity.Velocity = Vector3.zero
+    FlyBodyVelocity.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    FlyBodyVelocity.Parent = root
+    FlyBodyGyro = Instance.new("BodyGyro")
+    FlyBodyGyro.Name = "NXP_FlyGyro"
+    FlyBodyGyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+    FlyBodyGyro.CFrame = root.CFrame
+    FlyBodyGyro.Parent = root
+    hum.PlatformStand = true
+end
+FlyButton.MouseButton1Click:Connect(function()
+    if FlyEnabled then
+        StopFly()
+        FlyButton.Text = "FLY: OFF"
+        FlyButton.BackgroundColor3 = COLORS.Panel2
+        LagStatus.Text = "FLY // DISABLED"
+        LagStatus.TextColor3 = COLORS.Gray
+    else
+        StartFly()
+        FlyButton.Text = "FLY: ON"
+        FlyButton.BackgroundColor3 = COLORS.PurpleDark
+        LagStatus.Text = "FLY // ACTIVE"
+        LagStatus.TextColor3 = COLORS.Green
+    end
+end)
+------------------------------------------------------------
+-- AIM PAGE CONTROLS
+------------------------------------------------------------
+local ExternalAimButton = CreateButton(AimPage, "AIMBOT SYSTEM", 10)
+local DisableAimButton = CreateButton(AimPage, "DISABLE AIMBOT SYSTEM", 60)
+local AutoShotToggleButton = CreateButton(AimPage, "AUTO SHOT: OFF", 110)
+local AutoShotModeButton = CreateButton(AimPage, "AUTO SHOT MODE: SINGLE", 160)
+local ExternalAimStatus = CreateLabel(AimPage, "AUTO SHOT // DISABLED", 210)
+ExternalAimStatus.TextColor3 = COLORS.Gray
+local AimPlayerSelectionTitle = CreateLabel(AimPage, "SELECT AIM TARGETS", 240)
+local AimPlayerList = Instance.new("ScrollingFrame")
+AimPlayerList.Parent = AimPage
+AimPlayerList.ZIndex = MAIN_ZINDEX + 5
+AimPlayerList.Size = UDim2.new(1, 0, 0, 150)
+AimPlayerList.Position = UDim2.new(0, 0, 0, 270)
+AimPlayerList.BackgroundColor3 = COLORS.Panel
+AimPlayerList.BorderSizePixel = 0
+AimPlayerList.ScrollBarThickness = 4
+AimPlayerList.ScrollBarImageColor3 = COLORS.Cyan
+AimPlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+AimPlayerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+AddCorner(AimPlayerList, 12)
+AddStroke(AimPlayerList, COLORS.Purple, 1)
+local AimPlayerListLayout = Instance.new("UIListLayout")
+AimPlayerListLayout.Parent = AimPlayerList
+AimPlayerListLayout.Padding = UDim.new(0, 5)
+AimPlayerListLayout.SortOrder = Enum.SortOrder.Name
+local AimPlayerListPadding = Instance.new("UIPadding")
+AimPlayerListPadding.Parent = AimPlayerList
+AimPlayerListPadding.PaddingTop = UDim.new(0, 7)
+AimPlayerListPadding.PaddingBottom = UDim.new(0, 7)
+AimPlayerListPadding.PaddingLeft = UDim.new(0, 7)
+AimPlayerListPadding.PaddingRight = UDim.new(0, 7)
+local AimClearSelectionButton = CreateButton(AimPage, "CLEAR AIM SELECTION", 430)
+local AimRefreshPlayersButton = CreateButton(AimPage, "REFRESH PLAYER LIST", 480)
+AutoShotToggleButton.MouseButton1Click:Connect(function()
+    AutoShotEnabled = not AutoShotEnabled
+    if AutoShotEnabled then
+        AutoShotToggleButton.Text = "AUTO SHOT: ON"
+        AutoShotToggleButton.BackgroundColor3 = COLORS.PurpleDark
+        ExternalAimStatus.Text = "AUTO SHOT // ACTIVE"
+        ExternalAimStatus.TextColor3 = COLORS.Green
+    else
+        AutoShotToggleButton.Text = "AUTO SHOT: OFF"
+        AutoShotToggleButton.BackgroundColor3 = COLORS.Panel2
+        ExternalAimStatus.Text = "AUTO SHOT // DISABLED"
+        ExternalAimStatus.TextColor3 = COLORS.Gray
+        SingleFired = false
+    end
+end)
+AutoShotModeButton.MouseButton1Click:Connect(function()
+    CurrentAutoShotIndex = CurrentAutoShotIndex % #AutoShotModes + 1
+    AutoShotMode = AutoShotModes[CurrentAutoShotIndex]
+    AutoShotModeButton.Text = "AUTO SHOT MODE: " .. AutoShotMode
+    SingleFired = false
+end)
+ExternalAimButton.MouseButton1Click:Connect(function()
+    ExternalAimStatus.Text = "LOADING SCRIPT..."
+    ExternalAimStatus.TextColor3 = COLORS.Yellow
+    task.spawn(function()
+        local success, err = pcall(function()
+            loadstring(game:HttpGet("https://rawscripts.net/raw/RIVALS-Aimbot-no-banned-yes-sure-102092"))()
+        end)
+        if success then
+            ExternalAimStatus.Text = "AIMBOT // LOADED SUCCESS"
+            ExternalAimStatus.TextColor3 = COLORS.Green
+        else
+            ExternalAimStatus.Text = "AIMBOT // LOAD FAILED"
+            ExternalAimStatus.TextColor3 = COLORS.Red
+            warn("Aim Script Load Error: ", err)
+        end
+    end)
+end)
+DisableAimButton.MouseButton1Click:Connect(function()
+    ExternalAimStatus.Text = "AIMBOT // DISABLED"
+    ExternalAimStatus.TextColor3 = COLORS.Red
+end)
+------------------------------------------------------------
+-- AIM PLAYER LIST SELECTION SYSTEM
+------------------------------------------------------------
+local function IsAimPlayerSelected(player)
+    return AimSelectedPlayers[player] == true
+end
+local function CreateAimPlayerSelectionButton(player)
+    local button = Instance.new("TextButton")
+    button.Name = "AimPlayer_" .. tostring(player.UserId)
+    button.Parent = AimPlayerList
+    button.ZIndex = MAIN_ZINDEX + 8
+    button.Size = UDim2.new(1, 0, 0, 35)
+    button.TextScaled = true
+    button.Font = Enum.Font.GothamBold
+    button.TextColor3 = COLORS.White
+    button.BackgroundColor3 = COLORS.Panel2
+    button.BorderSizePixel = 0
+    AddCorner(button, 8)
+    local stroke = AddStroke(button, COLORS.Purple, 1)
+    local function UpdateButton()
+        if IsAimPlayerSelected(player) then
+            button.Text = "✓  " .. player.Name
+            button.BackgroundColor3 = COLORS.PurpleDark
+            stroke.Color = COLORS.Cyan
+        else
+            button.Text = "☐  " .. player.Name
+            button.BackgroundColor3 = COLORS.Panel2
+            stroke.Color = COLORS.Purple
+        end
+    end
+    UpdateButton()
+    button.MouseButton1Click:Connect(function()
+        if IsAimPlayerSelected(player) then
+            AimSelectedPlayers[player] = nil
+        else
+            AimSelectedPlayers[player] = true
+        end
+        UpdateButton()
+    end)
+end
+local function RefreshAimPlayerList()
+    for _, child in ipairs(AimPlayerList:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    for player in pairs(AimSelectedPlayers) do
+        if player.Parent ~= Players then AimSelectedPlayers[player] = nil end
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then CreateAimPlayerSelectionButton(player) end
+    end
+end
+AimClearSelectionButton.MouseButton1Click:Connect(function()
+    table.clear(AimSelectedPlayers)
+    RefreshAimPlayerList()
+end)
+AimRefreshPlayersButton.MouseButton1Click:Connect(function()
+    table.clear(AimSelectedPlayers)
+    RefreshAimPlayerList()
+end)
+------------------------------------------------------------
+-- ADMIN PAGE
+------------------------------------------------------------
+local TeleportToggleButton = CreateButton(AdminPage, "TELEPORT: OFF", 0)
+local TeleportStatus = CreateLabel(AdminPage, "TELEPORT // READY", 48)
+TeleportStatus.TextColor3 = COLORS.Gray
+local PlayerSelectionTitle = CreateLabel(AdminPage, "SELECT PLAYER", 83)
+local PlayerList = Instance.new("ScrollingFrame")
+PlayerList.Parent = AdminPage
+PlayerList.ZIndex = MAIN_ZINDEX + 5
+PlayerList.Size = UDim2.new(1, 0, 0, 180)
+PlayerList.Position = UDim2.new(0, 0, 0, 116)
+PlayerList.BackgroundColor3 = COLORS.Panel
+PlayerList.BorderSizePixel = 0
+PlayerList.ScrollBarThickness = 4
+PlayerList.ScrollBarImageColor3 = COLORS.Cyan
+PlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+PlayerList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+AddCorner(PlayerList, 12)
+AddStroke(PlayerList, COLORS.Purple, 1)
+local PlayerListLayout = Instance.new("UIListLayout")
+PlayerListLayout.Parent = PlayerList
+PlayerListLayout.Padding = UDim.new(0, 5)
+PlayerListLayout.SortOrder = Enum.SortOrder.Name
+local PlayerListPadding = Instance.new("UIPadding")
+PlayerListPadding.Parent = PlayerList
+PlayerListPadding.PaddingTop = UDim.new(0, 7)
+PlayerListPadding.PaddingBottom = UDim.new(0, 7)
+PlayerListPadding.PaddingLeft = UDim.new(0, 7)
+PlayerListPadding.PaddingRight = UDim.new(0, 7)
+local TeleportNowButton = CreateButton(AdminPage, "TELEPORT NOW", 305)
+local ClearSelectionButton = CreateButton(AdminPage, "CLEAR SELECTION", 355)
+local RefreshPlayersButton = CreateButton(AdminPage, "REFRESH PLAYER LIST", 405)
+local TeleportBackButton = CreateButton(AdminPage, "TELEPORT BACK: ON", 455)
+local TeleportBackTitle = CreateLabel(AdminPage, "TELEPORT BACK DELAY", 505)
+local TeleportBackBox = Instance.new("TextBox")
+TeleportBackBox.Parent = AdminPage
+TeleportBackBox.ZIndex = MAIN_ZINDEX + 5
+TeleportBackBox.Size = UDim2.new(1, 0, 0, 40)
+TeleportBackBox.Position = UDim2.new(0, 0, 0, 535)
+TeleportBackBox.BackgroundColor3 = COLORS.Panel2
+TeleportBackBox.BorderSizePixel = 0
+TeleportBackBox.Text = "0.5"
+TeleportBackBox.PlaceholderText = "Seconds"
+TeleportBackBox.TextColor3 = COLORS.White
+TeleportBackBox.PlaceholderColor3 = COLORS.Gray
+TeleportBackBox.TextScaled = true
+TeleportBackBox.Font = Enum.Font.GothamBold
+TeleportBackBox.ClearTextOnFocus = false
+AddCorner(TeleportBackBox, 10)
+AddStroke(TeleportBackBox, COLORS.Cyan, 1)
+local TeleportHotkeyButton = CreateButton(AdminPage, "HOTKEY: E", 585)
+local AdminStatus = CreateLabel(AdminPage, "ADMIN // READY", 635)
+AdminStatus.TextColor3 = COLORS.Gray
+------------------------------------------------------------
+-- STATUS LABEL
+------------------------------------------------------------
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Parent = Hub
+StatusLabel.ZIndex = MAIN_ZINDEX + 5
+StatusLabel.Size = UDim2.new(1, -40, 0, 24)
+StatusLabel.Position = UDim2.new(0, 20, 1, -30)
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Text = "NXP SYSTEM // READY"
+StatusLabel.TextScaled = true
+StatusLabel.Font = Enum.Font.GothamBold
+StatusLabel.TextColor3 = COLORS.Cyan
+------------------------------------------------------------
+-- PAGE SWITCH & CONTROLS
+------------------------------------------------------------
+local function ShowPage(page)
+    MainPage.Visible = false
+    AimPage.Visible = false
+    AdminPage.Visible = false
+    page.Visible = true
+end
+MainTab.MouseButton1Click:Connect(function() ShowPage(MainPage) end)
+AimTab.MouseButton1Click:Connect(function() 
+    ShowPage(AimPage) 
+    RefreshAimPlayerList()
+end)
+AdminTab.MouseButton1Click:Connect(function()
+    ShowPage(AdminPage)
+    RefreshPlayerList()
+end)
+MainButton.MouseButton1Click:Connect(function() Hub.Visible = not Hub.Visible end)
+CloseButton.MouseButton1Click:Connect(function() Hub.Visible = false end)
+------------------------------------------------------------
+-- ESP LOGIC
+------------------------------------------------------------
+local ESP_TAG_NAME = "NXP_NameTag"
+local ESP_HIGHLIGHT_NAME = "NXP_ESP_Highlight"
+local function RemoveESPFromPlayer(player)
+    if not player.Character then return end
+    local head = player.Character:FindFirstChild("Head")
+    if head then
+        local tag = head:FindFirstChild(ESP_TAG_NAME)
+        if tag then tag:Destroy() end
+    end
+    local highlight = player.Character:FindFirstChild(ESP_HIGHLIGHT_NAME)
+    if highlight then highlight:Destroy() end
+end
+local function RemoveESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        RemoveESPFromPlayer(player)
+    end
+end
+local function CreateESP(player)
+    if not ESPEnabled or player == LocalPlayer then return end
+    local character = player.Character
+    if not character then return end
+    local head = character:FindFirstChild("Head")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not head or not root then return end
+    local highlight = character:FindFirstChild(ESP_HIGHLIGHT_NAME)
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = ESP_HIGHLIGHT_NAME
+        highlight.Adornee = character
+        highlight.Parent = character
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.FillTransparency = 1
+        highlight.OutlineTransparency = 0
+        highlight.OutlineColor = Color3.fromHSV(0, 1, 1)
+    end
+    if not head:FindFirstChild(ESP_TAG_NAME) then
+        local Billboard = Instance.new("BillboardGui")
+        Billboard.Name = ESP_TAG_NAME
+        Billboard.Parent = head
+        Billboard.AlwaysOnTop = true
+        Billboard.Size = UDim2.new(0, 130, 0, 28)
+        Billboard.StudsOffset = Vector3.new(0, 2.7, 0)
+        local NameLabel = Instance.new("TextLabel")
+        NameLabel.Name = "RainbowNameLabel"
+        NameLabel.Parent = Billboard
+        NameLabel.Size = UDim2.new(1, 0, 1, 0)
+        NameLabel.BackgroundTransparency = 1
+        NameLabel.Text = player.Name
+        NameLabel.TextScaled = true
+        NameLabel.Font = Enum.Font.GothamBlack
+        NameLabel.TextColor3 = Color3.fromHSV(0, 1, 1)
+        NameLabel.TextStrokeTransparency = 0
+        NameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    end
+end
+local function RefreshESP()
+    if not ESPEnabled then
+        RemoveESP()
+        return
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        CreateESP(player)
+    end
+end
+local function UpdateESPDistance()
+    if not ESPEnabled then return end
+    local localCharacter = LocalPlayer.Character
+    if not localCharacter then return end
+    local localRoot = localCharacter:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
+    local rainbowColor = Color3.fromHSV((tick() % 5) / 5, 1, 1)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character
+            if character then
+                local head = character:FindFirstChild("Head")
+                local root = character:FindFirstChild("HumanoidRootPart")
+                if head and root then
+                    local distance = (localRoot.Position - root.Position).Magnitude
+                    local tag = head:FindFirstChild(ESP_TAG_NAME)
+                    local highlight = character:FindFirstChild(ESP_HIGHLIGHT_NAME)
+                    if distance <= ESPDistance then
+                        if not tag or not highlight then
+                            CreateESP(player)
+                            tag = head:FindFirstChild(ESP_TAG_NAME)
+                            highlight = character:FindFirstChild(ESP_HIGHLIGHT_NAME)
+                        end
+                        if tag then 
+                            tag.Enabled = true 
+                            local nameLabel = tag:FindFirstChild("RainbowNameLabel")
+                            if nameLabel then nameLabel.TextColor3 = rainbowColor end
+                        end
+                        if highlight then 
+                            highlight.Enabled = true 
+                            highlight.OutlineColor = rainbowColor
+                        end
+                    else
+                        if tag then tag.Enabled = false end
+                        if highlight then highlight.Enabled = false end
+                    end
+                end
+            end
+        end
+    end
+end
+ESPButton.MouseButton1Click:Connect(function()
+    ESPEnabled = not ESPEnabled
+    if ESPEnabled then
+        ESPButton.Text = "ESP: ON"
+        ESPButton.BackgroundColor3 = COLORS.PurpleDark
+        RefreshESP()
+    else
+        ESPButton.Text = "ESP: OFF"
+        ESPButton.BackgroundColor3 = COLORS.Panel2
+        RemoveESP()
+    end
+end)
+------------------------------------------------------------
+-- RAINBOW GUI LOGIC (ULTIMATE FIX - HIGHLIGHT & FORCE COLOR)
+------------------------------------------------------------
+local function ApplyRainbowHighlight(target, color)
+    if not target then return end
+    local hl = target:FindFirstChild("NXP_RainbowHL")
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.Name = "NXP_RainbowHL"
+        hl.FillTransparency = 0.15 -- Tạo độ mờ để vẫn nhìn thấy chi tiết súng
+        hl.OutlineTransparency = 1 -- Ẩn viền cho tự nhiên
+        hl.DepthMode = Enum.HighlightDepthMode.Occluded -- Không xuyên tường (chỉ hiển thị bình thường)
+        hl.Parent = target
+    end
+    hl.FillColor = color
+end
+
+local function ClearRainbow()
+    -- Xóa toàn bộ Hiệu ứng Phủ khi tắt
+    for _, obj in ipairs(Camera:GetDescendants()) do
+        if obj.Name == "NXP_RainbowHL" then obj:Destroy() end
+    end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "NXP_RainbowHL" then obj:Destroy() end
+    end
+end
+
+local function UpdateRainbowGUI()
+    if not RainbowGUIEnabled then return end
+    local rainbowColor = Color3.fromHSV((tick() % 4) / 4, 1, 1)
+
+    -- 1. ÁP DỤNG LÊN CƠ THỂ MÌNH
+    local char = LocalPlayer.Character
+    if char then
+        ApplyRainbowHighlight(char, rainbowColor)
+        -- Fallback: Đổi màu trực tiếp
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") or part:IsA("MeshPart") then
+                if part.Name ~= "HumanoidRootPart" then
+                    part.Color = rainbowColor
+                end
+            end
+        end
+    end
+
+    -- 2. ÁP DỤNG LÊN GÓC NHÌN THỨ NHẤT TRONG CAMERA (Viewmodel tiêu chuẩn)
+    for _, obj in ipairs(Camera:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            ApplyRainbowHighlight(obj, rainbowColor)
+            -- Fallback
+            for _, part in ipairs(obj:GetDescendants()) do
+                if part:IsA("BasePart") or part:IsA("MeshPart") then
+                    part.Color = rainbowColor
+                elseif part:IsA("SpecialMesh") then
+                    part.VertexColor = Vector3.new(rainbowColor.R, rainbowColor.G, rainbowColor.B)
+                end
+            end
+        end
+    end
+
+    -- 3. QUÉT VIEWMODEL BỊ GIẤU NGOÀI WORKSPACE (Dành cho game như Rivals)
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj ~= char then
+            local name = string.lower(obj.Name)
+            if name:match("viewmodel") or name:match("arms") or name:match("client") or name:match("weapon") then
+                ApplyRainbowHighlight(obj, rainbowColor)
+                -- Fallback
+                for _, part in ipairs(obj:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("MeshPart") then
+                        part.Color = rainbowColor
+                    end
+                end
+            end
+        end
+    end
+end
+
+RainbowGUIButton.MouseButton1Click:Connect(function()
+    RainbowGUIEnabled = not RainbowGUIEnabled
+    if RainbowGUIEnabled then
+        RainbowGUIButton.Text = "RAINBOW GUI: ON"
+        RainbowGUIButton.BackgroundColor3 = COLORS.PurpleDark
+        LagStatus.Text = "RAINBOW // ACTIVE"
+        LagStatus.TextColor3 = COLORS.Green
+    else
+        RainbowGUIButton.Text = "RAINBOW GUI: OFF"
+        RainbowGUIButton.BackgroundColor3 = COLORS.Panel2
+        LagStatus.Text = "RAINBOW // DISABLED"
+        LagStatus.TextColor3 = COLORS.Gray
+        ClearRainbow()
+    end
+end)
+------------------------------------------------------------
+-- NOCLIP LOGIC
+------------------------------------------------------------
+local function SaveCollisionState()
+    table.clear(SavedCollision)
+    local character = LocalPlayer.Character
+    if not character then return end
+    for _, object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            SavedCollision[object] = object.CanCollide
+        end
+    end
+end
+local function UpdateNoclip()
+    local character = LocalPlayer.Character
+    if not character then return end
+    for _, object in ipairs(character:GetDescendants()) do
+        if object:IsA("BasePart") then
+            if NoclipEnabled or FlyEnabled then
+                object.CanCollide = false
+            else
+                if SavedCollision[object] ~= nil then
+                    object.CanCollide = SavedCollision[object]
+                end
+            end
+        end
+    end
+end
+local function SetNoclip(enabled)
+    if enabled then SaveCollisionState() end
+    NoclipEnabled = enabled
+    UpdateNoclip()
+end
+NoclipButton.MouseButton1Click:Connect(function()
+    SetNoclip(not NoclipEnabled)
+    if NoclipEnabled then
+        NoclipButton.Text = "NOCLIP: ON"
+        NoclipButton.BackgroundColor3 = COLORS.PurpleDark
+    else
+        NoclipButton.Text = "NOCLIP: OFF"
+        NoclipButton.BackgroundColor3 = COLORS.Panel2
+    end
+end)
+LocalPlayer.CharacterAdded:Connect(function(character)
+    character:WaitForChild("HumanoidRootPart")
+    task.wait(0.2)
+    if NoclipEnabled then
+        SaveCollisionState()
+        UpdateNoclip()
+    end
+    if FlyEnabled then
+        StopFly()
+        FlyButton.Text = "FLY: OFF"
+        FlyButton.BackgroundColor3 = COLORS.Panel2
+    end
+end)
+------------------------------------------------------------
+-- FIX LAG LOGIC
+------------------------------------------------------------
+local function ApplyLowGraphics()
+    Lighting.GlobalShadows = false
+    Lighting.EnvironmentDiffuseScale = 0
+    Lighting.EnvironmentSpecularScale = 0
+    for _, object in ipairs(Lighting:GetChildren()) do
+        if object:IsA("BloomEffect") or object:IsA("BlurEffect") or object:IsA("ColorCorrectionEffect") or object:IsA("DepthOfFieldEffect") or object:IsA("SunRaysEffect") then
+            object.Enabled = false
+        end
+    end
+    for _, object in ipairs(workspace:GetDescendants()) do
+        if object:IsA("ParticleEmitter") or object:IsA("Trail") or object:IsA("Beam") or object:IsA("Fire") or object:IsA("Smoke") or object:IsA("Sparkles") then
+            object.Enabled = false
+        elseif object:IsA("Texture") or object:IsA("Decal") then
+            object.Transparency = 1
+        end
+    end
+    local Terrain = workspace:FindFirstChildOfClass("Terrain")
+    if Terrain then
+        Terrain.WaterWaveSize = 0
+        Terrain.WaterWaveSpeed = 0
+        Terrain.WaterReflectance = 0
+        Terrain.WaterTransparency = 1
+    end
+end
+LowGraphicsButton.MouseButton1Click:Connect(function()
+    LowGraphicsEnabled = not LowGraphicsEnabled
+    if LowGraphicsEnabled then
+        ApplyLowGraphics()
+        LowGraphicsButton.Text = "FIX LAG: ON"
+        LowGraphicsButton.BackgroundColor3 = COLORS.PurpleDark
+    else
+        LowGraphicsButton.Text = "FIX LAG: OFF"
+        LowGraphicsButton.BackgroundColor3 = COLORS.Panel2
+    end
+end)
+------------------------------------------------------------
+-- ADMIN PLAYER SELECTION
+------------------------------------------------------------
+local function IsPlayerSelected(player)
+    return SelectedPlayers[player] == true
+end
+local function CreatePlayerSelectionButton(player)
+    local button = Instance.new("TextButton")
+    button.Name = "Player_" .. tostring(player.UserId)
+    button.Parent = PlayerList
+    button.ZIndex = MAIN_ZINDEX + 8
+    button.Size = UDim2.new(1, 0, 0, 35)
+    button.TextScaled = true
+    button.Font = Enum.Font.GothamBold
+    button.TextColor3 = COLORS.White
+    button.BackgroundColor3 = COLORS.Panel2
+    button.BorderSizePixel = 0
+    AddCorner(button, 8)
+    local stroke = AddStroke(button, COLORS.Purple, 1)
+    local function UpdateButton()
+        if IsPlayerSelected(player) then
+            button.Text = "✓  " .. player.Name
+            button.BackgroundColor3 = COLORS.PurpleDark
+            stroke.Color = COLORS.Cyan
+        else
+            button.Text = "☐  " .. player.Name
+            button.BackgroundColor3 = COLORS.Panel2
+            stroke.Color = COLORS.Purple
+        end
+    end
+    UpdateButton()
+    button.MouseButton1Click:Connect(function()
+        if IsPlayerSelected(player) then
+            SelectedPlayers[player] = nil
+        else
+            SelectedPlayers[player] = true
+        end
+        UpdateButton()
+        local count = 0
+        for _, selected in pairs(SelectedPlayers) do
+            if selected then count += 1 end
+        end
+        AdminStatus.Text = "SELECTED // " .. tostring(count) .. " PLAYER(S)"
+    end)
+end
+local function RefreshPlayerList()
+    for _, child in ipairs(PlayerList:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+    for player in pairs(SelectedPlayers) do
+        if player.Parent ~= Players then SelectedPlayers[player] = nil end
+    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then CreatePlayerSelectionButton(player) end
+    end
+    local count = math.max(0, #Players:GetPlayers() - 1)
+    AdminStatus.Text = "PLAYER LIST // " .. tostring(count) .. " PLAYER(S)"
+end
+ClearSelectionButton.MouseButton1Click:Connect(function()
+    table.clear(SelectedPlayers)
+    RefreshPlayerList()
+    AdminStatus.Text = "SELECTION // CLEARED"
+end)
+RefreshPlayersButton.MouseButton1Click:Connect(function()
+    table.clear(SelectedPlayers)
+    RefreshPlayerList()
+    StatusLabel.Text = "PLAYER LIST // REFRESHED"
+end)
+local function GetNearestSelectedPlayer()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local nearestPlayer = nil
+    local nearestDistance = math.huge
+    for player, selected in pairs(SelectedPlayers) do
+        if selected and player and player.Parent == Players and player ~= LocalPlayer then
+            local targetCharacter = player.Character
+            if targetCharacter then
+                local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+                local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+                if targetRoot and humanoid and humanoid.Health > 0 then
+                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return nearestPlayer
+end
+------------------------------------------------------------
+-- FULL CHARACTER LOCK SYSTEM
+------------------------------------------------------------
+local function StopTeleportAttachment()
+    if TeleportConnectionStepped then
+        TeleportConnectionStepped:Disconnect()
+        TeleportConnectionStepped = nil
+    end
+    if TeleportConnectionRender then
+        TeleportConnectionRender:Disconnect()
+        TeleportConnectionRender = nil
+    end
+    
+    local curChar = LocalPlayer.Character
+    if curChar then
+        local myHumanoid = curChar:FindFirstChildOfClass("Humanoid")
+        if myHumanoid then
+            myHumanoid.PlatformStand = false
+        end
+    end
+    TeleportTargetPlayer = nil
+end
+local function SyncCharacterToHead()
+    if not TeleportTargetPlayer then return end
+    local curChar = LocalPlayer.Character
+    local tarChar = TeleportTargetPlayer.Character
+    if not curChar or not tarChar then return end
+    local targetHead = tarChar:FindFirstChild("Head")
+    local myRoot = curChar:FindFirstChild("HumanoidRootPart")
+    local myHumanoid = curChar:FindFirstChildOfClass("Humanoid")
+    if not targetHead or not myRoot then return end
+    
+    if myHumanoid then
+        myHumanoid.PlatformStand = true
+    end
+    myRoot.AssemblyLinearVelocity = Vector3.zero
+    myRoot.AssemblyAngularVelocity = Vector3.zero
+    
+    local targetPos = targetHead.Position
+    local myPos = targetPos + Vector3.new(0, TeleportHeightOffset, 0)
+    local lookCFrame = CFrame.lookAt(myPos, targetPos)
+    
+    myRoot.CFrame = lookCFrame
+    Camera.CFrame = lookCFrame
+end
+local function TeleportToPlayer(player)
+    if not player then
+        TeleportStatus.Text = "TELEPORT // NO TARGET"
+        TeleportStatus.TextColor3 = COLORS.Red
+        return false
+    end
+    local character = LocalPlayer.Character
+    local targetCharacter = player.Character
+    if not character or not targetCharacter then
+        TeleportStatus.Text = "TELEPORT // TARGET NOT READY"
+        TeleportStatus.TextColor3 = COLORS.Red
+        return false
+    end
+    local myRoot = character:FindFirstChild("HumanoidRootPart")
+    local targetHead = targetCharacter:FindFirstChild("Head")
+    if not myRoot or not targetHead then
+        TeleportStatus.Text = "TELEPORT // PART NOT FOUND"
+        TeleportStatus.TextColor3 = COLORS.Red
+        return false
+    end
+    StopTeleportAttachment()
+    local originalCFrame = myRoot.CFrame
+    TeleportTargetPlayer = player
+    TeleportStatus.Text = "TELEPORT // LOCK: " .. player.Name
+    TeleportStatus.TextColor3 = COLORS.Green
+    AdminStatus.Text = "LOCKED ON TOP → " .. player.Name
+    StatusLabel.Text = "STICKING TO " .. player.Name
+    
+    TeleportConnectionStepped = RunService.Stepped:Connect(SyncCharacterToHead)
+    TeleportConnectionRender = RunService.RenderStepped:Connect(SyncCharacterToHead)
+    
+    if TeleportBackEnabled then
+        local delayTime = math.max(0, TeleportBackDelay)
+        task.delay(delayTime, function()
+            StopTeleportAttachment()
+            local currentCharacter = LocalPlayer.Character
+            local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+            
+            if currentRoot then
+                currentRoot.AssemblyLinearVelocity = Vector3.zero
+                currentRoot.AssemblyAngularVelocity = Vector3.zero
+                currentRoot.CFrame = originalCFrame
+            end
+            TeleportStatus.Text = "TELEPORT BACK // COMPLETE"
+            TeleportStatus.TextColor3 = COLORS.Cyan
+            AdminStatus.Text = "RETURN // COMPLETE"
+            StatusLabel.Text = "NXP SYSTEM // READY"
+        end)
+    end
+    return true
+end
+------------------------------------------------------------
+-- TELEPORT BUTTONS & CONTROLS
+------------------------------------------------------------
+TeleportNowButton.MouseButton1Click:Connect(function()
+    if not TeleportEnabled then
+        TeleportStatus.Text = "TELEPORT // OFF"
+        TeleportStatus.TextColor3 = COLORS.Red
+        AdminStatus.Text = "ENABLE TELEPORT FIRST"
+        return
+    end
+    local target = GetNearestSelectedPlayer()
+    if not target then
+        TeleportStatus.Text = "TELEPORT // NO TARGET"
+        TeleportStatus.TextColor3 = COLORS.Red
+        AdminStatus.Text = "NO PLAYER SELECTED"
+        return
+    end
+    TeleportToPlayer(target)
+end)
+TeleportToggleButton.MouseButton1Click:Connect(function()
+    TeleportEnabled = not TeleportEnabled
+    if TeleportEnabled then
+        TeleportToggleButton.Text = "TELEPORT: ON"
+        TeleportToggleButton.BackgroundColor3 = COLORS.PurpleDark
+        TeleportStatus.Text = "TELEPORT // ACTIVE"
+        TeleportStatus.TextColor3 = COLORS.Green
+        StatusLabel.Text = "TELEPORT // ONLINE"
+    else
+        TeleportToggleButton.Text = "TELEPORT: OFF"
+        TeleportToggleButton.BackgroundColor3 = COLORS.Panel2
+        TeleportStatus.Text = "TELEPORT // DISABLED"
+        TeleportStatus.TextColor3 = COLORS.Gray
+        StatusLabel.Text = "TELEPORT // OFFLINE"
+        StopTeleportAttachment()
+    end
+end)
+TeleportBackButton.MouseButton1Click:Connect(function()
+    TeleportBackEnabled = not TeleportBackEnabled
+    TeleportBackButton.Text = TeleportBackEnabled and "TELEPORT BACK: ON" or "TELEPORT BACK: OFF"
+    TeleportBackButton.BackgroundColor3 = TeleportBackEnabled and COLORS.PurpleDark or COLORS.Panel2
+end)
+TeleportBackBox.FocusLost:Connect(function()
+    local value = tonumber(TeleportBackBox.Text)
+    if value == nil then
+        TeleportBackBox.Text = tostring(TeleportBackDelay)
+        AdminStatus.Text = "DELAY // INVALID"
+        return
+    end
+    TeleportBackDelay = math.clamp(value, 0, 60)
+    TeleportBackBox.Text = tostring(TeleportBackDelay)
+    AdminStatus.Text = "DELAY // " .. tostring(TeleportBackDelay) .. "s"
+end)
+local function UpdateTeleportHotkeyText()
+    TeleportHotkeyButton.Text = "HOTKEY: " .. TeleportHotkey.Name
+end
+TeleportHotkeyButton.MouseButton1Click:Connect(function()
+    if WaitingForTeleportHotkey then return end
+    WaitingForTeleportHotkey = true
+    TeleportHotkeyButton.Text = "PRESS A KEY..."
+    AdminStatus.Text = "INPUT // WAITING"
+end)
+------------------------------------------------------------
+-- PLAYER SETUP
+------------------------------------------------------------
+local function SetupPlayer(player)
+    if player == LocalPlayer then return end
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        if ESPEnabled then
+            CreateESP(player)
+            UpdateESPDistance()
+        end
+        task.defer(RefreshPlayerList)
+        task.defer(RefreshAimPlayerList)
+    end)
+end
+for _, player in ipairs(Players:GetPlayers()) do SetupPlayer(player) end
+Players.PlayerAdded:Connect(function(player)
+    SetupPlayer(player)
+    task.wait(0.1)
+    RefreshPlayerList()
+    RefreshAimPlayerList()
+end)
+Players.PlayerRemoving:Connect(function(player)
+    SelectedPlayers[player] = nil
+    AimSelectedPlayers[player] = nil
+    RemoveESPFromPlayer(player)
+    if TeleportTargetPlayer == player then
+        StopTeleportAttachment()
+    end
+    task.defer(RefreshPlayerList)
+    task.defer(RefreshAimPlayerList)
+end)
+------------------------------------------------------------
+-- GLOBAL INPUT
+------------------------------------------------------------
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if WaitingForTeleportHotkey then
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            if input.KeyCode == Enum.KeyCode.Escape then
+                WaitingForTeleportHotkey = false
+                UpdateTeleportHotkeyText()
+                TeleportHotkeyButton.BackgroundColor3 = COLORS.Panel2
+                AdminStatus.Text = "INPUT // CANCELLED"
+            else
+                TeleportHotkey = input.KeyCode
+                WaitingForTeleportHotkey = false
+                UpdateTeleportHotkeyText()
+                TeleportHotkeyButton.BackgroundColor3 = COLORS.Panel2
+                AdminStatus.Text = "INPUT // TELEPORT KEY UPDATED"
+            end
+        end
+        return
+    end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == TeleportHotkey then
+            if UIS:GetFocusedTextBox() or not TeleportEnabled then return end
+            local target = GetNearestSelectedPlayer()
+            if not target then
+                AdminStatus.Text = "TELEPORT // NO PLAYER SELECTED"
+                TeleportStatus.Text = "NO TARGET"
+                TeleportStatus.TextColor3 = COLORS.Red
+                return
+            end
+            TeleportToPlayer(target)
+        end
+    end
+end)
+------------------------------------------------------------
+-- MAIN RENDER LOOP
+------------------------------------------------------------
+local DistanceTimer = 0
+RunService.RenderStepped:Connect(function(deltaTime)
+    if NoclipEnabled or FlyEnabled then
+        UpdateNoclip()
+    end
+    if ESPEnabled then
+        DistanceTimer = DistanceTimer + deltaTime
+        if DistanceTimer >= 0.05 then
+            DistanceTimer = 0
+            UpdateESPDistance()
+        end
+    end
+    if RainbowGUIEnabled then
+        UpdateRainbowGUI()
+    end
+    if FlyEnabled and FlyBodyVelocity and FlyBodyGyro then
+        local char = LocalPlayer.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local moveDir = Vector3.zero
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                if moveDir.Magnitude > 0 then
+                    moveDir = moveDir.Unit
+                end
+                FlyBodyVelocity.Velocity = moveDir * FlySpeed
+                FlyBodyGyro.CFrame = Camera.CFrame
+            end
+        end
+    end
+    if AutoShotEnabled then
+        local target = Mouse.Target
+        local isHoveringEnemy = false
+        if target and target.Parent then
+            local enemyModel = target.Parent:IsA("Accessory") and target.Parent.Parent or target.Parent
+            local enemyPlayer = Players:GetPlayerFromCharacter(enemyModel)
+            
+            if enemyPlayer and enemyPlayer ~= LocalPlayer and IsAimPlayerSelected(enemyPlayer) then
+                local enemyHumanoid = enemyModel:FindFirstChildOfClass("Humanoid")
+                if enemyHumanoid and enemyHumanoid.Health > 0 then
+                    isHoveringEnemy = true
+                end
+            end
+        end
+        if isHoveringEnemy then
+            if AutoShotMode == "SINGLE" then
+                if not SingleFired then
+                    if mouse1click then pcall(mouse1click) end
+                    SingleFired = true
+                end
+            elseif AutoShotMode == "RAPID" then
+                if mouse1click then pcall(mouse1click) end
+            elseif AutoShotMode == "HOLD" then
+                if not IsShooting then
+                    if mouse1press then pcall(mouse1press) end
+                    IsShooting = true
+                end
+            end
+        else
+            SingleFired = false
+            if AutoShotMode == "HOLD" and IsShooting then
+                if mouse1release then pcall(mouse1release) end
+                IsShooting = false
+            end
+        end
+    else
+        SingleFired = false
+        if IsShooting then
+            if mouse1release then pcall(mouse1release) end
+            IsShooting = false
+        end
+    end
+end)
+------------------------------------------------------------
+-- INITIALIZE
+------------------------------------------------------------
+DistanceTitle.Text = "ESP DISTANCE: " .. tostring(ESPDistance) .. " STUDS"
+FlySpeedTitle.Text = "FLY SPEED: " .. tostring(FlySpeed)
+UpdateTeleportHotkeyText()
+RefreshPlayerList()
+RefreshAimPlayerList()
+Hub.Visible = false
+
